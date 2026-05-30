@@ -1,5 +1,7 @@
 // Supabase API 服務層
 import { supabase } from '../lib/supabase'
+import { buildDailyStockPlan } from './stockPlanning'
+import { deleteAllRowsFromTables } from './resetBusinessData'
 
 // ── 商品 ────────────────────────────────────────────────────
 
@@ -31,6 +33,10 @@ export async function deleteProduct(id) {
   if (error) throw error
 }
 
+export async function resetBusinessData() {
+  await deleteAllRowsFromTables(supabase)
+}
+
 export async function renameProduct(oldName, newName) {
   const { error } = await supabase.from('products').update({ name: newName, updated_at: new Date().toISOString() }).eq('name', oldName)
   if (error) throw error
@@ -57,31 +63,39 @@ export async function upsertDailyStock({ product_id, stock_date, open_stock, cre
 // 批量開攤：更新每日庫存和售價
 export async function setDailyStock(items) {
   const today = new Date().toISOString().slice(0, 10)
-  const { data: products } = await supabase.from('products').select('id, name, price').eq('is_active', true)
-  const productMap = {}
-  if (products) products.forEach(p => { productMap[p.name] = p })
+  const { data: products, error: productsErr } = await supabase.from('products').select('id, name, price').eq('is_active', true)
+  if (productsErr) throw productsErr
 
-  const stocksToUpsert = items
-    .map(item => {
-      const product = productMap[item.name]
-      if (!product) return null
-      return { product_id: product.id, stock_date: today, open_stock: item.openStock ?? 0 }
-    })
-    .filter(Boolean)
+  let plan = buildDailyStockPlan(items, products ?? [], today)
 
-  if (stocksToUpsert.length > 0) {
+  if (plan.productsToCreate.length > 0) {
+    const { error: createErr } = await supabase
+      .from('products')
+      .upsert(plan.productsToCreate, { onConflict: 'name' })
+    if (createErr) throw createErr
+
+    const { data: refreshedProducts, error: refreshedErr } = await supabase
+      .from('products')
+      .select('id, name, price')
+      .eq('is_active', true)
+    if (refreshedErr) throw refreshedErr
+    plan = buildDailyStockPlan(items, refreshedProducts ?? [], today)
+  }
+
+  if (plan.stocksToUpsert.length > 0) {
     const { error } = await supabase
       .from('daily_stocks')
-      .upsert(stocksToUpsert, { onConflict: 'product_id,stock_date' })
+      .upsert(plan.stocksToUpsert, { onConflict: 'product_id,stock_date' })
     if (error) throw error
   }
 
   // 更新售價（如果有改動）
-  for (const item of items) {
-    const product = productMap[item.name]
-    if (product && item.price != null && Number(item.price) !== Number(product.price)) {
-      await supabase.from('products').update({ price: item.price, updated_at: new Date().toISOString() }).eq('id', product.id)
-    }
+  for (const product of plan.productsToUpdate) {
+    const { error } = await supabase
+      .from('products')
+      .update({ price: product.price, updated_at: new Date().toISOString() })
+      .eq('id', product.id)
+    if (error) throw error
   }
 }
 

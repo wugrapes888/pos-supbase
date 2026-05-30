@@ -87,7 +87,7 @@ export default function App() {
           />
         )}
         {page === 'orders'   && <OrdersPage onGoToPOS={handleGoToPOS} />}
-        {page === 'stock'    && role === 'boss' && <StockSetupPage />}
+        {page === 'stock'    && role === 'boss' && <StockSetupPage onOpenPOS={() => setPage('pos')} />}
         {page === 'reports'  && role === 'boss' && <ReportsPage />}
         {page === 'settings' && role === 'boss' && <SettingsPage currentUser={currentUser} />}
       </main>

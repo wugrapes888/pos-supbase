@@ -1,5 +1,9 @@
 import { useState, useEffect } from 'react'
-import { getCashiers, saveCashier, deleteCashier, saveProduct, getProducts, deleteProduct } from '../services/api'
+import {
+  getCashiers, saveCashier, deleteCashier,
+  saveProduct, getProducts, deleteProduct,
+  resetBusinessData,
+} from '../services/api'
 
 function Section({ title, children }) {
   return (
@@ -17,6 +21,8 @@ export default function SettingsPage({ currentUser }) {
   const [newProduct, setNewProduct] = useState({ name: '', price: '', category: '水果', barcode: '', stock_mode: 'reset' })
   const [saving, setSaving]   = useState(false)
   const [msg, setMsg]         = useState('')
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const reload = async () => {
     const [c, p] = await Promise.all([getCashiers(), getProducts()])
@@ -52,6 +58,20 @@ export default function SettingsPage({ currentUser }) {
       flash('已新增商品')
     } catch (err) { flash(err.message) }
     finally { setSaving(false) }
+  }
+
+  const handleResetBusinessData = async () => {
+    setResetting(true)
+    try {
+      await resetBusinessData()
+      setConfirmReset(false)
+      await reload()
+      flash('已重置所有營業資料')
+    } catch (err) {
+      flash('重置失敗：' + err.message)
+    } finally {
+      setResetting(false)
+    }
   }
 
   return (
@@ -144,6 +164,47 @@ export default function SettingsPage({ currentUser }) {
             連線設定請在 <code>.env.local</code>（本機）或 GitHub Secrets（GitHub Actions）中設定<br />
             <code>VITE_SUPABASE_URL</code> 和 <code>VITE_SUPABASE_ANON_KEY</code>
           </div>
+        </div>
+      </Section>
+
+      {/* 危險操作 */}
+      <Section title="危險操作">
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+          <div className="font-bold text-red-700 mb-1">重置所有營業資料</div>
+          <p className="text-sm text-red-600 mb-4">
+            會刪除客戶、訂單、收銀紀錄、每日庫存、進貨批次和商品資料，但會保留老闆與員工登入帳號。
+          </p>
+
+          {!confirmReset ? (
+            <button
+              onClick={() => setConfirmReset(true)}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-bold hover:bg-red-700 active:scale-[0.98]"
+            >
+              重置所有營業資料
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm font-bold text-red-700">
+                請再次確認：刪除後無法從系統內復原。
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={handleResetBusinessData}
+                  disabled={resetting}
+                  className="px-4 py-2 rounded-lg bg-red-700 text-white text-sm font-black hover:bg-red-800 disabled:bg-red-200 disabled:text-red-400 active:scale-[0.98]"
+                >
+                  {resetting ? '刪除中…' : '確認永久刪除'}
+                </button>
+                <button
+                  onClick={() => setConfirmReset(false)}
+                  disabled={resetting}
+                  className="px-4 py-2 rounded-lg bg-white border border-red-200 text-red-600 text-sm font-bold hover:bg-red-100 disabled:opacity-50"
+                >
+                  取消
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Section>
     </div>
